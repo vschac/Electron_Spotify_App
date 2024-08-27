@@ -1,0 +1,39 @@
+{
+  "name": "electron-spotify-app",
+  "version": "1.0.0",
+  "main": "src/main.js",
+  "author": "Vince Schacknies",
+  "scripts": {
+    "start": "electron-forge start",
+    "dist": "electron-builder",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "build": {
+    "appId": "com.vschac.Spotify-Hotkey",
+    "dmg": {
+      "title": "Spotify Hotkey 1.0"
+    },
+    "win": {
+      "target": "NSIS",
+      "icon": "logo.png"
+    }
+  },
+  "dependencies": {
+    "axios": "^1.7.3",
+    "dotenv": "^16.4.5",
+    "electron-squirrel-startup": "^1.0.1",
+    "querystring": "^0.2.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.4.0",
+    "@electron-forge/maker-deb": "^7.4.0",
+    "@electron-forge/maker-rpm": "^7.4.0",
+    "@electron-forge/maker-squirrel": "^7.4.0",
+    "@electron-forge/maker-zip": "^7.4.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.4.0",
+    "@electron-forge/plugin-fuses": "^7.4.0",
+    "@electron/fuses": "^1.8.0",
+    "electron": "^31.3.1"
+  }
+}
