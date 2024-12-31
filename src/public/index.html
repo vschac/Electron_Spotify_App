@@ -3,9 +3,15 @@
 <head>
   <title>Spotify Profile</title>
   <link rel="stylesheet" type="text/css" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body>
-  <div class="profile-picture" id="profile-picture"></div>
+  <div class="profile-container">
+    <div class="profile-picture" id="profile-picture"></div>
+    <div class="logout-menu hidden" id="logout-menu">
+      <button id="logout-button">Logout</button>
+    </div>
+  </div>
   <h1>Spotify Playlist Hotkey</h1>
   <div class="greeting" id="greeting"></div>
   <button id="login">Login with Spotify</button>
@@ -16,10 +22,17 @@
         <select class="playlist-select"></select>
       </div>
     </div>
-    <button id="add-hotkey">Add another hotkey</button>
-    <input type="checkbox" id="toggle-editing">
-    <label for="toggle-editing">Activate Hotkeys</label>
-    <button id="remove-hotkey">Remove last hotkey</button> 
+    <div class="button-controls">
+      <button id="add-hotkey">Add hotkey</button>
+      <div class="toggle-section">
+        <span class="toggle-label">Activate Hotkeys</span>
+        <div class="checkbox-wrapper-8">
+          <input type="checkbox" id="toggle-editing" class="tgl tgl-skewed">
+          <label for="toggle-editing" data-tg-on="ON" data-tg-off="OFF" class="tgl-btn"></label>
+        </div>
+      </div>
+      <button id="remove-hotkey">Remove last hotkey</button>
+    </div>
     <div id="log-box">
       <pre id="log-content"></pre>
     </div>
@@ -29,7 +42,9 @@
 
     function updateHotkeyTextboxes(event) {
       const focusedElement = document.activeElement;
-      if (focusedElement.classList.contains('hotkey-input')) {
+      const isHotkeysActive = document.getElementById('toggle-editing').checked;
+      
+      if (focusedElement.classList.contains('hotkey-input') && !isHotkeysActive) {
         focusedElement.value = event.key;
       }
     }
@@ -39,6 +54,7 @@
       const hotkeyInputs = document.querySelectorAll('.hotkey-input');
       const playlistSelects = document.querySelectorAll('.playlist-select');
       const addHotkeyButton = document.getElementById('add-hotkey');
+      const removeHotkeyButton = document.getElementById('remove-hotkey');
       
       hotkeyInputs.forEach(input => {
         input.disabled = setKeys;
@@ -48,6 +64,7 @@
         select.disabled = setKeys;
       });
       addHotkeyButton.disabled = setKeys;
+      removeHotkeyButton.disabled = setKeys;
 
       if (setKeys) {
         const hotkeysData = Array.from(document.querySelectorAll('.hotkey-set')).map(set => [
@@ -55,13 +72,21 @@
           set.querySelector('.playlist-select').value
         ]);
         window.electronAPI.saveHotkeys(hotkeysData);
+      } else {
+        // Disable all hotkeys when toggle is switched off
+        window.electronAPI.disableHotkeys();
       }
     }
 
     document.addEventListener('keyup', updateHotkeyTextboxes);
     document.getElementById('toggle-editing').addEventListener('change', toggleHotkeys);
     document.getElementById('login').addEventListener('click', () => {
-      window.electronAPI.spotifyLogin();
+      try {
+        console.log('Login button clicked');
+        window.electronAPI.spotifyLogin();
+      } catch (error) {
+        console.error('Error during login:', error);
+      }
     });
 
     window.electronAPI.onAccessToken(async (token) => {
@@ -139,16 +164,18 @@
       window.electronAPI.getPlaylists().then(playlists => {
         displayPlaylistsForElement(newHotkeySet.querySelector('.playlist-select'), playlists);
       });
+      
+      updateRemoveButtonState();
     });
 
     document.getElementById('remove-hotkey').addEventListener('click', () => {
       const hotkeyContainer = document.getElementById('hotkey-container');
-      const lastHotkeySet = hotkeyContainer.querySelector('.hotkey-set:last-child');
-      if (lastHotkeySet) {
-        hotkeyContainer.removeChild(lastHotkeySet);
+      const hotkeySets = hotkeyContainer.querySelectorAll('.hotkey-set');
+      if (hotkeySets.length > 1) {
+        hotkeyContainer.removeChild(hotkeySets[hotkeySets.length - 1]);
+        updateRemoveButtonState();
       }
     });
-
 
     function displayPlaylistsForElement(selectElement, playlists) {
       selectElement.innerHTML = ''; // Clear existing options
@@ -163,6 +190,42 @@
     // Attach remove event listeners to existing remove buttons
     document.querySelectorAll('.remove-hotkey').forEach(button => {
       button.addEventListener('click', removeHotkeySet);
+    });
+
+    function updateRemoveButtonState() {
+      const hotkeyCount = document.querySelectorAll('.hotkey-set').length;
+      const removeButton = document.getElementById('remove-hotkey');
+      removeButton.disabled = hotkeyCount <= 1;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      updateRemoveButtonState();
+    });
+
+    function toggleLogoutMenu() {
+      const logoutMenu = document.getElementById('logout-menu');
+      logoutMenu.classList.toggle('hidden');
+    }
+
+    function handleLogout() {
+      window.electronAPI.logout();
+      document.getElementById('login').style.display = 'block';
+      document.getElementById('playlists-container').classList.add('hidden');
+      document.getElementById('profile-picture').innerHTML = '';
+      document.getElementById('greeting').textContent = '';
+      document.getElementById('logout-menu').classList.add('hidden');
+    }
+
+    document.getElementById('profile-picture').addEventListener('click', toggleLogoutMenu);
+    document.getElementById('logout-button').addEventListener('click', handleLogout);
+
+    document.addEventListener('click', (event) => {
+      const profileContainer = document.querySelector('.profile-container');
+      const logoutMenu = document.getElementById('logout-menu');
+      
+      if (!profileContainer.contains(event.target) && !logoutMenu.classList.contains('hidden')) {
+        logoutMenu.classList.add('hidden');
+      }
     });
   </script>
 </body>

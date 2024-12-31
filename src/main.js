@@ -4,14 +4,19 @@ const querystring = require('querystring');
 const axios = require('axios');
 require('dotenv').config();
 
+// Direct environment variable usage instead of config
 const client_id = process.env.SPOTIFY_CLIENT_ID;
 const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
 const redirect_uri = process.env.SPOTIFY_REDIRECT_URI;
 
+if (!client_id || !client_secret || !redirect_uri) {
+  console.error('Missing critical environment variables. Exiting.');
+  app.quit();
+}
+
 let mainWindow;
 let storedPlaylists = [];
 let accessToken; 
-
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -27,7 +32,6 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
 }
-
 
 async function handleLogin() {
   const authUrl = 'https://accounts.spotify.com/authorize?' +
@@ -53,31 +57,16 @@ async function handleLogin() {
     if (url.startsWith(redirect_uri)) {
       const code = new URL(url).searchParams.get('code');
       authWindow.close();
-      const authOptions = {
-        url: 'https://accounts.spotify.com/api/token',
-        form: {
-          code: code,
-          redirect_uri: redirect_uri,
-          grant_type: 'authorization_code'
-        },
-        headers: {
-          'Authorization': 'Basic ' + (Buffer.from(client_id + ':' + client_secret).toString('base64'))
-        },
-        json: true
-      };
-
+      
       try {
-        const response = await axios.post(authOptions.url, querystring.stringify(authOptions.form), { headers: authOptions.headers });
-        accessToken = response.data.access_token;  // Store access token in global variable
-
-        // Send access token to renderer process
+        const response = await getSpotifyToken(code);
+        accessToken = response.data.access_token;
         mainWindow.webContents.send('access_token', accessToken);
-
-        // Fetch and send playlists to renderer process
         const playlists = await fetchPlaylists(accessToken);
         mainWindow.webContents.send('playlists', playlists);
       } catch (error) {
-        console.log('Failed to get access token:', error);
+        console.error('Failed to get access token:', error);
+        sendLog('Failed to login: ' + error.message);
       }
     }
   });
@@ -94,12 +83,17 @@ function sendLog(message) {
 }
 
 async function fetchPlaylists(token) {
-  const response = await axios.get('https://api.spotify.com/v1/me/playlists', {
-    headers: {
-      'Authorization': `Bearer ${token}`
-    }
-  });
-  return response.data;
+  try {
+    const response = await axios.get('https://api.spotify.com/v1/me/playlists', {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error fetching playlists:', error);
+    return null;
+  }
 }
 
 async function getCurrentSong(token) {
@@ -135,7 +129,6 @@ async function getCurrentSong(token) {
     return null;
   }
 }
-
 
 async function addSongToPlaylist(token, playlistId, trackUri) {
   try {
@@ -202,9 +195,10 @@ ipcMain.on('spotify-login', handleLogin);
 app.on('ready', createWindow);
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  /*if (process.platform !== 'darwin') {
     app.quit();
-  }
+  }*/
+  app.quit();
 });
 
 app.on('activate', () => {
@@ -212,3 +206,32 @@ app.on('activate', () => {
     createWindow();
   }
 });
+
+ipcMain.on('logout', (event, removeAccount = false) => {
+  if (removeAccount) {
+    const accounts = store.get('spotifyAccounts') || [];
+    // Remove the current account - you'll need to store the current account ID somewhere
+    const updatedAccounts = accounts.filter(acc => acc.id !== currentAccountId);
+    store.set('spotifyAccounts', updatedAccounts);
+  }
+  accessToken = null;
+  storedPlaylists = [];
+  globalShortcut.unregisterAll();
+});
+
+async function getSpotifyToken(code) {
+  const authOptions = {
+    url: 'https://accounts.spotify.com/api/token',
+    data: querystring.stringify({
+      code: code,
+      redirect_uri: redirect_uri,
+      grant_type: 'authorization_code'
+    }),
+    headers: {
+      'Authorization': 'Basic ' + (Buffer.from(client_id + ':' + client_secret).toString('base64')),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    }
+  };
+
+  return axios.post(authOptions.url, authOptions.data, { headers: authOptions.headers });
+}

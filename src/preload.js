@@ -9,4 +9,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveHotkeys: (hotkeysData) => ipcRenderer.send('save-hotkeys', hotkeysData),
   onLogMessage: (callback) => ipcRenderer.on('log-message', callback),
   disableHotkeys: () => ipcRenderer.send('disable-hotkeys'),
+  logout: () => ipcRenderer.send('logout')
 });

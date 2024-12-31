@@ -6,10 +6,7 @@
   "author": "Vince Schacknies",
   "scripts": {
     "start": "NODE_ENV=development electron .",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac --arm64 --config.mac.target=dmg --config.mac.identity=null",
-    "build:win": "electron-builder build --win",
-    "build:linux": "electron-builder build --linux"
+    "build:mac": "electron-builder --mac --arm64 --config.mac.target=dmg --config.mac.identity=null"
   },
   "build": {
     "appId": "com.vschac.electrotify",
@@ -19,26 +16,11 @@
     },
     "files": [
       "src/**/*",
-      "package.json",
-      ".env"
-    ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      }
+      "package.json"
     ],
     "mac": {
       "category": "public.app-category.music",
       "target": "dmg",
-      "icon": "assets/icon.png"
-    },
-    "win": {
-      "target": "nsis",
-      "icon": "assets/icon.png"
-    },
-    "linux": {
-      "target": "AppImage",
       "icon": "assets/icon.png"
     }
   },
