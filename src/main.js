@@ -67,7 +67,7 @@ async function handleLogin() {
     querystring.stringify({
       response_type: 'code',
       client_id: client_id,
-      scope: 'user-read-private user-read-email user-read-playback-state playlist-modify-public',
+      scope: 'user-read-playback-state playlist-modify-public',
       redirect_uri: redirect_uri,
       show_dialog: true,
       state: Math.random().toString(36).substring(7)
