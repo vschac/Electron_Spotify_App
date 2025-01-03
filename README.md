@@ -15,7 +15,6 @@ A desktop application that allows you to add currently playing Spotify songs to 
 ## Development Setup
 
 1. Clone the repository
-2. Copy `src/config/secure.template.js` to `src/config/secure.js`
-3. Add your Spotify API credentials to `secure.js`
+2. Add your Spotify API credentials to `src/config/secure.js`
 4. Run `npm install`
-5. Run `npm start` to launch the development version
+5. Run `npm start` to launch the development version (or `npx electron .`)
