@@ -1,84 +1,60 @@
 {
-  "name": "electron-spotify-app",
-  "version": "1.0.0",
-  "description": "A Spotify app that allows you to add currently playing songs to playlists using hotkeys",
-  "main": "src/main.js",
-  "author": "Vince Schacknies",
-  "scripts": {
-    "start": "electron . --no-warnings",
-    "dev": "NODE_ENV=development electron . --no-warnings",
-    "build": "electron-builder",
-    "build:mac": "electron-builder --mac --universal",
-    "build:win": "electron-builder --win --x64",
-    "build:linux": "electron-builder --linux"
-  },
-  "build": {
-    "appId": "com.vschac.electrotify",
-    "productName": "Spotify Playlist Hotkey",
-    "directories": {
-      "output": "dist",
-      "buildResources": "assets"
+    "name": "playlist-hotkey-app",
+    "version": "1.0.0",
+    "description": "A Spotify app that allows you to add currently playing songs to playlists using hotkeys",
+    "main": "src/main.js",
+    "author": "Vince Schacknies",
+    "scripts": {
+      "start": "electron . --no-warnings",
+      "dev": "NODE_ENV=development electron . --no-warnings",
+      "build": "electron-builder",
+      "build:mac": "electron-builder --mac --universal",
+      "build:win": "electron-builder --win --x64",
+      "build:linux": "electron-builder --linux"
     },
-    "files": [
-      "src/**/*",
-      "node_modules/**/*",
-      "package.json",
-      "assets/**/*"
-    ],
-    "mac": {
-      "target": [
+    "build": {
+      "appId": "com.vschac.electrotify",
+      "productName": "Playlist Hotkey",
+      "directories": {
+        "output": "dist",
+        "buildResources": "assets"
+      },
+      "files": [
+        "src/**/*",
+        "node_modules/**/*",
+        "package.json",
+        "assets/**/*"
+      ],
+      "mac": {
+        "target": [
+          {
+            "target": "dmg",
+            "arch": ["x64", "arm64"]
+          }
+        ],
+        "category": "public.app-category.music",
+        "icon": "assets/icon.icns",
+        "hardenedRuntime": true,
+        "gatekeeperAssess": false,
+        "identity": null
+      },
+      "asar": true,
+      "asarUnpack": [
+        "src/config/**/*"
+      ],
+      "extraResources": [
         {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        },
-        {
-          "target": "zip",
-          "arch": ["x64", "arm64"]
+          "from": "src/config",
+          "to": "config"
         }
-      ],
-      "category": "public.app-category.music",
-      "minimumSystemVersion": "10.13",
-      "icon": "assets/icon.icns",
-      "hardenedRuntime": false,
-      "identity": null
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64"]
-        }
-      ],
-      "icon": "assets/icon.ico"
-    },
-    "linux": {
-      "target": [
-        "AppImage",
-        "deb",
-        "rpm"
-      ],
-      "icon": "assets/icon.png",
-      "category": "Utility",
-      "synopsis": "Spotify Playlist Hotkey Manager"
-    },
-    "protocols": {
-      "name": "Spotify Playlist Hotkey Protocol",
-      "schemes": [
-        "spotify-playlist-hotkey"
       ]
+    },
+    "dependencies": {
+      "axios": "^1.7.3",
+      "querystring": "^0.2.0"
+    },
+    "devDependencies": {
+      "electron": "^31.7.0",
+      "electron-builder": "^24.9.1"
     }
-  },
-  "dependencies": {
-    "axios": "^1.7.3",
-    "dotenv": "^16.4.5",
-    "querystring": "^0.2.0"
-  },
-  "devDependencies": {
-    "electron": "^31.7.0",
-    "electron-builder": "^24.9.1"
   }
-}

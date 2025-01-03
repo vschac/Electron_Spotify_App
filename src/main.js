@@ -3,31 +3,31 @@ const path = require('path');
 const querystring = require('querystring');
 const axios = require('axios');
 const secure = require('./config/secure');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+
 
 const client_id = secure.clientId;
 const client_secret = secure.clientSecret;
 const redirect_uri = secure.redirectUri;
-
-console.log('Configuration check:', {
-  clientId: !!client_id,
-  clientSecret: !!client_secret,
-  redirectUri: !!redirect_uri
-});
 
 if (!client_id || !client_secret || !redirect_uri) {
   console.error('Missing critical environment variables. Exiting.');
   app.quit();
 }
 
-let mainWindow;
+let mainWindow = null;
 let storedPlaylists = [];
-let accessToken; 
+let accessToken = null;
 let authWindow = null;
 let isProcessingAuth = false;
 
 function createWindow() {
-  const window = new BrowserWindow({
+  if (mainWindow) {
+    if (!mainWindow.isDestroyed()) {
+      return mainWindow;
+    }
+  }
+
+  mainWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -38,21 +38,30 @@ function createWindow() {
     }
   });
 
-  window.loadFile(path.join(__dirname, 'public', 'index.html'));
-  return window;
+  mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
+  
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
+
+  return mainWindow;
 }
 
 async function handleLogin() {
-  if (mainWindow && mainWindow.webContents) {
-    await mainWindow.webContents.session.clearStorageData({
-      storages: ['cookies', 'localstorage', 'caches', 'serviceworkers']
-    });
-  }
-
+  accessToken = null;
+  
   if (authWindow) {
     authWindow.close();
     authWindow = null;
   }
+
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    mainWindow = createWindow();
+  }
+
+  await mainWindow.webContents.session.clearStorageData({
+    storages: ['cookies', 'localstorage', 'caches', 'serviceworkers']
+  });
 
   const authUrl = 'https://accounts.spotify.com/authorize?' +
     querystring.stringify({
@@ -67,6 +76,8 @@ async function handleLogin() {
   authWindow = new BrowserWindow({
     width: 800,
     height: 600,
+    parent: mainWindow,
+    modal: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true
@@ -107,14 +118,16 @@ async function handleLogin() {
 
   authWindow.on('closed', () => {
     authWindow = null;
+    if (!accessToken) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reload();
+      }
+    }
   });
 }
 
 async function handleCallback(url) {
-  console.log('Processing Spotify authentication...');
-  
   if (isProcessingAuth) {
-    console.log('Already processing authentication, skipping duplicate callback');
     return;
   }
 
@@ -123,10 +136,10 @@ async function handleCallback(url) {
     return;
   }
 
-  let code;
   try {
+    isProcessingAuth = true;
     const urlObj = new URL(url);
-    code = urlObj.searchParams.get('code');
+    const code = urlObj.searchParams.get('code');
     const error = urlObj.searchParams.get('error');
     
     if (error) {
@@ -138,19 +151,11 @@ async function handleCallback(url) {
       }
       return;
     }
-  } catch (error) {
-    console.error('Failed to parse callback URL:', error);
-    return;
-  }
 
-  if (!code) {
-    console.error('No code received from Spotify');
-    sendLog('Authentication failed: No code received');
-    return;
-  }
+    if (!code) {
+      throw new Error('No code received from Spotify');
+    }
 
-  try {
-    isProcessingAuth = true;
     console.log('Exchanging auth code for access token...');
     const response = await getSpotifyToken(code);
     
@@ -160,7 +165,7 @@ async function handleCallback(url) {
 
     accessToken = response.data.access_token;
     console.log('Successfully obtained access token');
-    
+
     if (authWindow) {
       authWindow.close();
       authWindow = null;
@@ -169,14 +174,6 @@ async function handleCallback(url) {
     if (!mainWindow || mainWindow.isDestroyed()) {
       mainWindow = createWindow();
     }
-
-    await new Promise((resolve) => {
-      if (mainWindow.webContents.isLoading()) {
-        mainWindow.webContents.once('did-finish-load', resolve);
-      } else {
-        resolve();
-      }
-    });
 
     mainWindow.webContents.send('access_token', accessToken);
     const playlists = await fetchPlaylists(accessToken);
@@ -188,9 +185,13 @@ async function handleCallback(url) {
   } catch (error) {
     console.error('Failed to complete authentication:', error);
     sendLog('Failed to login: ' + (error.message || 'Unknown error'));
+    accessToken = null;
     if (authWindow) {
       authWindow.close();
       authWindow = null;
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reload();
     }
   } finally {
     isProcessingAuth = false;
@@ -313,7 +314,9 @@ ipcMain.on('disable-hotkeys', () => {
 
 ipcMain.on('spotify-login', handleLogin);
 
-app.on('ready', createWindow);
+app.on('ready', () => {
+  mainWindow = createWindow();
+});
 
 app.on('window-all-closed', () => {
   app.quit();
@@ -350,20 +353,4 @@ async function getSpotifyToken(code) {
     const response = await axios.post(tokenUrl, 
       querystring.stringify({
         code: code,
-        redirect_uri: redirect_uri,
-        grant_type: 'authorization_code'
-      }), 
-      {
-        headers: {
-          'Authorization': `Basic ${authHeader}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-    console.log('Token request successful');
-    return response;
-  } catch (error) {
-    console.error('Token request failed:', error.response?.data || error.message);
-    throw error;
-  }
-}
+        redi
