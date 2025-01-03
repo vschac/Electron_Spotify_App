@@ -2,12 +2,18 @@ const { app, BrowserWindow, ipcMain, shell, globalShortcut } = require('electron
 const path = require('path');
 const querystring = require('querystring');
 const axios = require('axios');
-require('dotenv').config();
+const secure = require('./config/secure');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-// Direct environment variable usage instead of config
-const client_id = process.env.SPOTIFY_CLIENT_ID;
-const client_secret = process.env.SPOTIFY_CLIENT_SECRET;
-const redirect_uri = process.env.SPOTIFY_REDIRECT_URI;
+const client_id = secure.clientId;
+const client_secret = secure.clientSecret;
+const redirect_uri = secure.redirectUri;
+
+console.log('Configuration check:', {
+  clientId: !!client_id,
+  clientSecret: !!client_secret,
+  redirectUri: !!redirect_uri
+});
 
 if (!client_id || !client_secret || !redirect_uri) {
   console.error('Missing critical environment variables. Exiting.');
@@ -17,9 +23,11 @@ if (!client_id || !client_secret || !redirect_uri) {
 let mainWindow;
 let storedPlaylists = [];
 let accessToken; 
+let authWindow = null;
+let isProcessingAuth = false;
 
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -30,19 +38,33 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile(path.join(__dirname, 'public', 'index.html'));
+  window.loadFile(path.join(__dirname, 'public', 'index.html'));
+  return window;
 }
 
 async function handleLogin() {
+  if (mainWindow && mainWindow.webContents) {
+    await mainWindow.webContents.session.clearStorageData({
+      storages: ['cookies', 'localstorage', 'caches', 'serviceworkers']
+    });
+  }
+
+  if (authWindow) {
+    authWindow.close();
+    authWindow = null;
+  }
+
   const authUrl = 'https://accounts.spotify.com/authorize?' +
     querystring.stringify({
       response_type: 'code',
       client_id: client_id,
-      scope: 'user-read-private user-read-email user-library-read user-read-playback-state playlist-modify-public',
-      redirect_uri: redirect_uri
+      scope: 'user-read-private user-read-email user-library-read user-read-playback-state playlist-modify-public playlist-modify-private',
+      redirect_uri: redirect_uri,
+      show_dialog: true,
+      state: Math.random().toString(36).substring(7)
     });
 
-  let authWindow = new BrowserWindow({
+  authWindow = new BrowserWindow({
     width: 800,
     height: 600,
     webPreferences: {
@@ -51,29 +73,128 @@ async function handleLogin() {
     }
   });
 
-  authWindow.loadURL(authUrl);
-
-  authWindow.webContents.on('will-redirect', async (event, url) => {
-    if (url.startsWith(redirect_uri)) {
-      const code = new URL(url).searchParams.get('code');
-      authWindow.close();
-      
-      try {
-        const response = await getSpotifyToken(code);
-        accessToken = response.data.access_token;
-        mainWindow.webContents.send('access_token', accessToken);
-        const playlists = await fetchPlaylists(accessToken);
-        mainWindow.webContents.send('playlists', playlists);
-      } catch (error) {
-        console.error('Failed to get access token:', error);
-        sendLog('Failed to login: ' + error.message);
-      }
+  authWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.log('Failed to load:', validatedURL);
+    if (validatedURL.startsWith(redirect_uri)) {
+      handleCallback(validatedURL);
     }
   });
+
+  authWindow.webContents.on('will-navigate', (event, url) => {
+    console.log('Navigating to:', url);
+    if (url.startsWith(redirect_uri)) {
+      handleCallback(url);
+    }
+  });
+
+  authWindow.webContents.on('will-redirect', (event, url) => {
+    console.log('Redirecting to:', url);
+    if (url.startsWith(redirect_uri)) {
+      handleCallback(url);
+    }
+  });
+
+  try {
+    await authWindow.loadURL(authUrl);
+  } catch (error) {
+    console.error('Failed to load auth URL:', error);
+    sendLog('Authentication failed: Could not load login page');
+    if (authWindow) {
+      authWindow.close();
+      authWindow = null;
+    }
+  }
 
   authWindow.on('closed', () => {
     authWindow = null;
   });
+}
+
+async function handleCallback(url) {
+  console.log('Processing Spotify authentication...');
+  
+  if (isProcessingAuth) {
+    console.log('Already processing authentication, skipping duplicate callback');
+    return;
+  }
+
+  if (!url) {
+    console.error('No URL provided to callback handler');
+    return;
+  }
+
+  let code;
+  try {
+    const urlObj = new URL(url);
+    code = urlObj.searchParams.get('code');
+    const error = urlObj.searchParams.get('error');
+    
+    if (error) {
+      console.error('Authentication error:', error);
+      sendLog('Authentication failed: ' + error);
+      if (authWindow) {
+        authWindow.close();
+        authWindow = null;
+      }
+      return;
+    }
+  } catch (error) {
+    console.error('Failed to parse callback URL:', error);
+    return;
+  }
+
+  if (!code) {
+    console.error('No code received from Spotify');
+    sendLog('Authentication failed: No code received');
+    return;
+  }
+
+  try {
+    isProcessingAuth = true;
+    console.log('Exchanging auth code for access token...');
+    const response = await getSpotifyToken(code);
+    
+    if (!response.data || !response.data.access_token) {
+      throw new Error('No access token in response');
+    }
+
+    accessToken = response.data.access_token;
+    console.log('Successfully obtained access token');
+    
+    if (authWindow) {
+      authWindow.close();
+      authWindow = null;
+    }
+
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      mainWindow = createWindow();
+    }
+
+    await new Promise((resolve) => {
+      if (mainWindow.webContents.isLoading()) {
+        mainWindow.webContents.once('did-finish-load', resolve);
+      } else {
+        resolve();
+      }
+    });
+
+    mainWindow.webContents.send('access_token', accessToken);
+    const playlists = await fetchPlaylists(accessToken);
+    if (playlists) {
+      mainWindow.webContents.send('playlists', playlists);
+    } else {
+      throw new Error('Failed to fetch playlists');
+    }
+  } catch (error) {
+    console.error('Failed to complete authentication:', error);
+    sendLog('Failed to login: ' + (error.message || 'Unknown error'));
+    if (authWindow) {
+      authWindow.close();
+      authWindow = null;
+    }
+  } finally {
+    isProcessingAuth = false;
+  }
 }
 
 function sendLog(message) {
@@ -195,9 +316,6 @@ ipcMain.on('spotify-login', handleLogin);
 app.on('ready', createWindow);
 
 app.on('window-all-closed', () => {
-  /*if (process.platform !== 'darwin') {
-    app.quit();
-  }*/
   app.quit();
 });
 
@@ -208,30 +326,44 @@ app.on('activate', () => {
 });
 
 ipcMain.on('logout', (event, removeAccount = false) => {
-  if (removeAccount) {
-    const accounts = store.get('spotifyAccounts') || [];
-    // Remove the current account - you'll need to store the current account ID somewhere
-    const updatedAccounts = accounts.filter(acc => acc.id !== currentAccountId);
-    store.set('spotifyAccounts', updatedAccounts);
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.session.clearStorageData({
+      storages: ['cookies', 'localstorage', 'caches', 'serviceworkers']
+    });
   }
+  
   accessToken = null;
   storedPlaylists = [];
   globalShortcut.unregisterAll();
+  
+  if (mainWindow) {
+    mainWindow.reload();
+  }
 });
 
 async function getSpotifyToken(code) {
-  const authOptions = {
-    url: 'https://accounts.spotify.com/api/token',
-    data: querystring.stringify({
-      code: code,
-      redirect_uri: redirect_uri,
-      grant_type: 'authorization_code'
-    }),
-    headers: {
-      'Authorization': 'Basic ' + (Buffer.from(client_id + ':' + client_secret).toString('base64')),
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
-  };
+  console.log('Getting Spotify token...');
+  const tokenUrl = 'https://accounts.spotify.com/api/token';
+  const authHeader = Buffer.from(`${client_id}:${client_secret}`).toString('base64');
 
-  return axios.post(authOptions.url, authOptions.data, { headers: authOptions.headers });
+  try {
+    const response = await axios.post(tokenUrl, 
+      querystring.stringify({
+        code: code,
+        redirect_uri: redirect_uri,
+        grant_type: 'authorization_code'
+      }), 
+      {
+        headers: {
+          'Authorization': `Basic ${authHeader}`,
+          'Content-Type': 'application/x-www-form-urlencoded'
+        }
+      }
+    );
+    console.log('Token request successful');
+    return response;
+  } catch (error) {
+    console.error('Token request failed:', error.response?.data || error.message);
+    throw error;
+  }
 }
